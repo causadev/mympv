@@ -1,6 +1,6 @@
 
 
-## These are my MPV config files, although they are not made by me. Below are the links from where they are sourced. This is just like a backup.
+## My MPV personal config files, sourced from various repositories:
 
 
 - User Interface: [uosc](https://github.com/tomasklaen/uosc)
