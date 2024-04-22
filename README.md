@@ -8,4 +8,4 @@
 - Shaders: [Anime4k](https://github.com/bloc97/Anime4K)
 - Cut videos: [mpv-cut](https://github.com/f0e/mpv-cut)
 - Skips openings, intros, etc: [SmartSkip](https://github.com/Eisa01/mpv-scripts?tab=readme-ov-file#smartskip)
-- Skips openings, intros, etc: [SmartCopyPaste](https://github.com/Eisa01/mpv-scripts?tab=readme-ov-file#smartcopypaste)
+- Copy and paste URLs: [SmartCopyPaste](https://github.com/Eisa01/mpv-scripts?tab=readme-ov-file#smartcopypaste)
