@@ -9,3 +9,4 @@
 - Cut videos: [mpv-cut](https://github.com/f0e/mpv-cut)
 - Skips openings, intros, etc: [SmartSkip](https://github.com/Eisa01/mpv-scripts?tab=readme-ov-file#smartskip)
 - Copy and paste URLs: [SmartCopyPaste_II](https://github.com/Eisa01/mpv-scripts?tab=readme-ov-file#smartcopypaste_ii)
+- Store your history: [SimpleHistory](https://github.com/Eisa01/mpv-scripts?tab=readme-ov-file#simplehistory)
