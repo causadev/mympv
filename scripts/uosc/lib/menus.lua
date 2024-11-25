@@ -507,7 +507,8 @@ function open_file_navigation_menu(directory_path, handle_activate, opts)
 	end
 
 	---@param event MenuEventActivate
-	local function activate(event)
+	---@param only_if_dir? boolean Activate item only if it's a directory.
+	local function activate(event, only_if_dir)
 		local path = event.value
 		local is_drives = path == '{drives}'
 
@@ -523,19 +524,31 @@ function open_file_navigation_menu(directory_path, handle_activate, opts)
 			return
 		end
 
-		if info.is_dir and not event.modifiers and not event.action then
-			open_directory(path)
-		else
+		if info.is_dir then
+			if not event.modifiers and not event.action then
+				open_directory(path)
+			end
+		elseif not only_if_dir then
 			handle_activate(event)
 		end
 	end
+
 	menu = Menu:open(menu_data, function(event)
 		if event.type == 'activate' then
 			activate(event --[[@as MenuEventActivate]])
-		elseif event.type == 'back' or event.type == 'key' and event.id == 'alt+up' then
+		elseif event.type == 'back' or event.type == 'key' and itable_has({'alt+up', 'left'}, event.id) then
 			if back_path then open_directory(back_path) end
 		elseif event.type == 'paste' then
 			handle_activate({type = 'activate', value = event.value})
+		elseif event.type == 'key' then
+			if event.id == 'right' then
+				local selected_item = event.selected_item
+				if selected_item then
+					activate(table_assign({}, selected_item, {type = 'activate'}), true)
+				end
+			elseif event.id == 'ctrl+c' and event.selected_item then
+				set_clipboard(event.selected_item.value)
+			end
 		elseif event.type == 'close' then
 			close()
 		end
@@ -895,49 +908,40 @@ function open_subtitle_downloader()
 		end
 	end
 
-	local handle_select, handle_search
+	local handle_download, handle_search
 
-	-- Ensures response is valid, and returns its payload, or handles error reporting,
-	-- and returns `nil`, indicating the consumer should abort response handling.
-	local function ensure_response_data(success, result, error, check)
-		local data
-		if success and result and result.status == 0 then
-			data = utils.parse_json(result.stdout)
-			if not data or not check(data) then
-				data = (data and data.error == true) and data or {
-					error = true,
-					message = t('invalid response json (see console for details)'),
-					message_verbose = 'invalid response json: ' .. utils.to_string(result.stdout),
-				}
-			end
-		else
-			data = {
-				error = true,
-				message = error or t('process exited with code %s (see console for details)', result.status),
-				message_verbose = result.stdout .. result.stderr,
-			}
-		end
-
-		if data.error then
-			local message, message_verbose = data.message or t('unknown error'), data.message_verbose or data.message
-			if message_verbose then msg.error(message_verbose) end
+	-- Checks if there an error, or data is invalid. If true, reports the error,
+	-- updates menu to inform about it, and returns true.
+	---@param error string|nil
+	---@param data any
+	---@param check_is_valid? fun(data: any):boolean
+	---@return boolean abort Whether the further response handling should be aborted.
+	local function should_abort(error, data, check_is_valid)
+		if error or not data or (not check_is_valid or not check_is_valid(data)) then
 			menu:update_items({
 				{
-					title = message,
-					hint = t('error'),
+					title = t('Something went wrong.'),
+					align = 'center',
+					muted = true,
+					italic = true,
+					selectable = false,
+				},
+				{
+					title = t('See console for details.'),
+					align = 'center',
 					muted = true,
 					italic = true,
 					selectable = false,
 				},
 			})
-			return
+			msg.error(error or ('Invalid response: ' .. (utils.format_json(data) or tostring(data))))
+			return true
 		end
-
-		return data
+		return false
 	end
 
 	---@param data {kind: 'file', id: number}|{kind: 'page', query: string, page: number}
-	handle_select = function(data)
+	handle_download = function(data)
 		if data.kind == 'page' then
 			handle_search(data.query, data.page)
 			return
@@ -953,25 +957,14 @@ function open_subtitle_downloader()
 			end
 		end)
 
-		local args = itable_join({config.ziggy_path, 'download-subtitles'}, credentials, {
+		local args = itable_join({'download-subtitles'}, credentials, {
 			'--file-id', tostring(data.id),
 			'--destination', destination_directory,
 		})
 
-		mp.command_native_async({
-			name = 'subprocess',
-			capture_stderr = true,
-			capture_stdout = true,
-			playback_only = false,
-			args = args,
-		}, function(success, result, error)
+		call_ziggy_async(args, function(error, data)
 			if not menu:is_alive() then return end
-
-			local data = ensure_response_data(success, result, error, function(data)
-				return type(data.file) == 'string'
-			end)
-
-			if not data then return end
+			if should_abort(error, data, function(data) return type(data.file) == 'string' end) then return end
 
 			load_track('sub', data.file)
 
@@ -1008,7 +1001,7 @@ function open_subtitle_downloader()
 
 		menu:update_items({{icon = 'spinner', align = 'center', selectable = false, muted = true}})
 
-		local args = itable_join({config.ziggy_path, 'search-subtitles'}, credentials)
+		local args = itable_join({'search-subtitles'}, credentials)
 
 		local languages = itable_filter(get_languages(), function(lang) return lang:match('.json$') == nil end)
 		args[#args + 1] = '--languages'
@@ -1027,20 +1020,14 @@ function open_subtitle_downloader()
 			args[#args + 1] = query
 		end
 
-		mp.command_native_async({
-			name = 'subprocess',
-			capture_stderr = true,
-			capture_stdout = true,
-			playback_only = false,
-			args = args,
-		}, function(success, result, error)
+		call_ziggy_async(args, function(error, data)
 			if not menu:is_alive() then return end
 
-			local data = ensure_response_data(success, result, error, function(data)
+			local function check_is_valid(data)
 				return type(data.data) == 'table' and data.page and data.total_pages
-			end)
+			end
 
-			if not data then return end
+			if should_abort(error, data, check_is_valid) then return end
 
 			local subs = itable_filter(data.data, function(sub)
 				return sub and sub.attributes and sub.attributes.release and type(sub.attributes.files) == 'table' and
@@ -1131,7 +1118,7 @@ function open_subtitle_downloader()
 						end
 					end)
 				elseif not event.action then
-					handle_select(event.value)
+					handle_download(event.value)
 				end
 			elseif event.type == 'search' then
 				handle_search(event.query)
